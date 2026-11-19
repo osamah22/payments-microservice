@@ -1,0 +1,82 @@
+package wallet
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/osamah22/payments-microservice/internal/wallet/walletdb"
+)
+
+// Posting is one of the transaction: money in or out of the account.
+type Posting struct {
+	AccountID uuid.UUID
+	Direction Direction
+	Amount    int64
+	Currency  string
+}
+
+// NewTransaction is a transaction we want to record.
+type NewTransaction struct {
+	Description string
+	Postings    []Posting
+}
+
+// Transaction is posted journal entry, together with its entries.
+type Transaction struct {
+	walletdb.Transaction
+	Entries []Entry `json:"entries"`
+}
+
+// inTx runs fn inside a database transaction, handling it queries bount to that
+// transaction. It commits when fn returns nil, and rolls back otherwise.
+func (s *Store) inTx(ctx context.Context, fn func(q *walletdb.Queries) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	// Rollback is a no-op once the transaction has commited, so deferring it
+	// covers every early return, and even a panic, in one line.
+	defer tx.Rollback(ctx)
+
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+	// Deferred constraints, like our balance check, run here, at commit.
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// PostTransaction records a transaction and all of its entries automatically:
+// either every entry is stored, or none are. Postgres rejects the whole thing
+// at commit if its depits and credits don't balance.
+func (s *Store) PostTransaction(ctx context.Context, nt NewTransaction) (Transaction, error) {
+	var posted Transaction
+	err := s.inTx(ctx, func(q *walletdb.Queries) error {
+		journal, err := q.CreateTransaction(ctx, nt.Description)
+		if err != nil {
+			return fmt.Errorf("insert transaction: %w", err)
+		}
+		posted.Transaction = journal
+		for _, p := range nt.Postings {
+			entry, err := q.CreateEntry(ctx, walletdb.CreateEntryParams{
+				TransactionID: journal.ID,
+				AccountID:     p.AccountID,
+				Direction:     p.Direction,
+				Amount:        p.Amount,
+				Currency:      p.Currency,
+			})
+			if err != nil {
+				return fmt.Errorf("insert entry: %w", err)
+			}
+			posted.Entries = append(posted.Entries, entry)
+		}
+		return nil
+	})
+	if err != nil {
+		return Transaction{}, fmt.Errorf("post transaction: %w", err)
+	}
+	return posted, nil
+}
