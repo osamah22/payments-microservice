@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/osamah22/payments-microservice/internal/platform/apperr"
 	"github.com/osamah22/payments-microservice/internal/wallet/walletdb"
 )
 
@@ -25,7 +26,7 @@ const (
 	Credit = walletdb.EntryDirectionCredit
 )
 
-var ErrAccountNotFound = errors.New("wallet: account not found")
+var ErrAccountNotFound = fmt.Errorf("account %w", apperr.ErrNotFound)
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -36,7 +37,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool, q: walletdb.New(pool)}
 }
 
-// CreateAccount opens new account.
+// CreateAccount opens a new account.
 func (s *Store) CreateAccount(ctx context.Context, a NewAccount) (Account, error) {
 	acc, err := s.q.CreateAccount(ctx, a)
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"github.com/osamah22/payments-microservice/internal/wallet/walletdb"
 )
 
-// Posting is one of the transaction: money in or out of the account.
+// Posting is one line of a transaction: money in or out of one account.
 type Posting struct {
 	AccountID uuid.UUID
 	Direction Direction
@@ -22,20 +22,20 @@ type NewTransaction struct {
 	Postings    []Posting
 }
 
-// Transaction is posted journal entry, together with its entries.
+// Transaction is a posted journal entry, together with its entries.
 type Transaction struct {
 	walletdb.Transaction
 	Entries []Entry `json:"entries"`
 }
 
-// inTx runs fn inside a database transaction, handling it queries bount to that
+// inTx runs fn inside a database transaction, handing it queries bound to that
 // transaction. It commits when fn returns nil, and rolls back otherwise.
 func (s *Store) inTx(ctx context.Context, fn func(q *walletdb.Queries) error) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
 	}
-	// Rollback is a no-op once the transaction has commited, so deferring it
+	// Rollback is a no-op once the transaction has committed, so deferring it
 	// covers every early return, and even a panic, in one line.
 	defer tx.Rollback(ctx)
 
@@ -49,9 +49,9 @@ func (s *Store) inTx(ctx context.Context, fn func(q *walletdb.Queries) error) er
 	return nil
 }
 
-// PostTransaction records a transaction and all of its entries automatically:
+// PostTransaction records a transaction and all of its entries atomically:
 // either every entry is stored, or none are. Postgres rejects the whole thing
-// at commit if its depits and credits don't balance.
+// at commit if its debits and credits don't balance.
 func (s *Store) PostTransaction(ctx context.Context, nt NewTransaction) (Transaction, error) {
 	var posted Transaction
 	err := s.inTx(ctx, func(q *walletdb.Queries) error {

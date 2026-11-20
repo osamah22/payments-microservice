@@ -8,14 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewPool(ctx context.Context, dns string) (*pgxpool.Pool, error) {
+func NewPool(ctx context.Context, dns string, maxConns int32) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dns)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: parse dns: %w", err)
 	}
 
-	cfg.MinConns = 2
-	cfg.MaxConns = 10
+	cfg.MinConns = min(2, maxConns)
+	cfg.MaxConns = maxConns
 
 	cfg.MaxConnLifetime = time.Hour
 	cfg.MaxConnLifetimeJitter = time.Minute * 5
