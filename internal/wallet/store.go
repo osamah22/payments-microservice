@@ -8,6 +8,8 @@ import (
 	"math"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/osamah22/payments-microservice/internal/platform/apperr"
 	"github.com/osamah22/payments-microservice/internal/wallet/walletdb"
@@ -24,9 +26,15 @@ type (
 const (
 	Debit  = walletdb.EntryDirectionDebit
 	Credit = walletdb.EntryDirectionCredit
+
+	KindSystem = walletdb.AccountKindSystem
+	KindWallet = walletdb.AccountKindWallet
 )
 
-var ErrAccountNotFound = fmt.Errorf("account %w", apperr.ErrNotFound)
+var (
+	ErrAccountNotFound = fmt.Errorf("account %w", apperr.ErrNotFound)
+	ErrAccountExists   = fmt.Errorf("%w: account already exists", apperr.ErrConflict)
+)
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -40,8 +48,24 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // CreateAccount opens a new account.
 func (s *Store) CreateAccount(ctx context.Context, a NewAccount) (Account, error) {
 	acc, err := s.q.CreateAccount(ctx, a)
+	if isUniqueViolation(err) {
+		return Account{}, ErrAccountExists
+	}
 	if err != nil {
 		return Account{}, fmt.Errorf("create account: %w", err)
+	}
+	return acc, nil
+}
+
+// SystemAccount returns one of our own accounts by name and currency, like the
+// settlement account for USD.
+func (s *Store) SystemAccount(ctx context.Context, name, currency string) (Account, error) {
+	acc, err := s.q.GetSystemAccount(ctx, walletdb.GetSystemAccountParams{Name: name, Currency: currency})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Account{}, ErrAccountNotFound
+	}
+	if err != nil {
+		return Account{}, fmt.Errorf("get system account %s %s: %w", name, currency, err)
 	}
 	return acc, nil
 }
@@ -84,4 +108,10 @@ func (s *Store) Entries(ctx context.Context, id uuid.UUID, before int64, limit i
 		return nil, fmt.Errorf("list entries %s: %w", id, err)
 	}
 	return entries, nil
+}
+
+// isUniqueViolation reports weather err is Postgres rejecting duplicates.
+func isUniqueViolation(err error) bool {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	return ok && pgErr.Code == "23505" // unique_violation
 }
