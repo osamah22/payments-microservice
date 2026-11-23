@@ -15,6 +15,7 @@ import (
 	"github.com/osamah22/payments-microservice/internal/platform/httpx"
 	"github.com/osamah22/payments-microservice/internal/platform/logging"
 	"github.com/osamah22/payments-microservice/internal/platform/postgres"
+	"github.com/osamah22/payments-microservice/internal/wallet"
 )
 
 // version is stamped at build time: go build -ldflags "-X main.version=v1.2.3".
@@ -65,6 +66,10 @@ func main() {
 		}
 		httpx.WriteJSON(w, r, http.StatusOK, map[string]string{"status": "ready"})
 	})
+	// The wallet API, and a JSON 404 for everything else.
+	svc := wallet.NewService(wallet.NewStore(pool))
+	wallet.NewHandler(svc).Register(mux)
+	mux.HandleFunc("/", httpx.NotFound)
 
 	// Server
 	server := &http.Server{

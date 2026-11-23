@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/osamah22/payments-microservice/internal/platform/apperr"
@@ -104,6 +105,7 @@ func (s *Service) Balance(ctx context.Context, id uuid.UUID) (AccountBalance, er
 // at our bank, and a credit to the wallet, which now owes it to the customer.
 func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money) (Transaction, error) {
 	var v apperr.ValidationError
+	checkAmount(&v, amount.Amount)
 	switch {
 	case amount.Amount <= 0:
 		v.Add("amount", "must be a positive number of minor units, like 1050 for 10.50")
@@ -199,4 +201,77 @@ func decodeCursor(cursor string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(string(b), 10, 64)
+}
+
+// checkAmount records a problem in v if amount can't be moved: money moves in
+// positive amounts, up to MaxAmount at a time.
+func checkAmount(v *apperr.ValidationError, amount int64) {
+	switch {
+	case amount <= 0:
+		v.Add("amount", "must be a positive number of minor units, like 1050 for 10.50")
+	case amount > MaxAmount:
+		v.Add("amount", fmt.Sprintf("must be at most %d", MaxAmount))
+	}
+}
+
+// A Transfer is money that moved from one wallet to another.
+type Transfer struct {
+	TransactionID uuid.UUID
+	From, To      uuid.UUID
+	Amount        Money
+	CreatedAt     time.Time
+}
+
+func (s *Service) Transfer(ctx context.Context, fromID, toID string, amount Money) (Transfer, error) {
+	var v apperr.ValidationError
+	checkAmount(&v, amount.Amount)
+	from, err := s.walletField(ctx, &v, "from", fromID)
+	if err != nil {
+		return Transfer{}, nil
+	}
+	to, err := s.walletField(ctx, &v, "to", toID)
+	if err != nil {
+		return Transfer{}, err
+	}
+	// compare the wallets only when both exists
+	if from.ID != uuid.Nil && to.ID != uuid.Nil {
+		switch {
+		case from.ID == to.ID:
+			v.Add("to", "must be a different wallet")
+		case to.Currency != from.Currency:
+			v.Add("to", "must be a "+from.Currency+" wallet, like from")
+		case amount.Currency != from.Currency:
+			v.Add("currency", "must match the wallet's currency, "+from.Currency)
+		}
+	}
+	if err := v.Err(); err != nil {
+		return Transfer{}, err
+	}
+	tx, err := s.store.Transfer(ctx, from.ID, to.ID, amount.Amount, amount.Currency)
+	if err != nil {
+		return Transfer{}, err
+	}
+	return Transfer{
+		TransactionID: tx.ID,
+		From:          from.ID,
+		To:            to.ID,
+		Amount:        amount,
+		CreatedAt:     tx.CreatedAt,
+	}, nil
+}
+
+// walletField loads the wallet that a request field names. A malformed or
+// unknown ID is a problem with that field, recorded in v: only unexpected
+// errors are returned.
+func (s *Service) walletField(ctx context.Context, v *apperr.ValidationError, field, id string) (Account, error) {
+	wid, err := uuid.Parse(id)
+	if err != nil {
+		v.Add(field, "must be a wallet id")
+		return Account{}, nil
+	}
+	w, err := s.Wallet(ctx, wid)
+	if errors.Is(err, ErrWalletNotFound) {
+		v.Add(field, "no such wallet")
+	}
+	return w, err
 }
