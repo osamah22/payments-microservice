@@ -49,7 +49,7 @@ type (
 	}
 )
 
-func toWallet(a Account) walletResponse {
+func toWallet(a *Account) walletResponse {
 	return walletResponse{ID: a.ID, OwnerID: a.OwnerID, Currency: a.Currency, CreatedAt: a.CreatedAt}
 }
 

@@ -56,7 +56,7 @@ var currencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
 
 // CreateWallet opens a wallet for an owner, in one currency. An owner can
 // have one wallet per currency.
-func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (Account, error) {
+func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (*Account, error) {
 	var v apperr.ValidationError
 	owner, err := uuid.Parse(ownerID)
 	if err != nil || owner == uuid.Nil {
@@ -66,17 +66,17 @@ func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (A
 		v.Add("currency", "must be a three-letter ISO 4217 code, like USD")
 	}
 	if err := v.Err(); err != nil {
-		return Account{}, err
+		return nil, err
 	}
 
 	// We support a currency when we have a settlement account to fund it.
 	_, err = s.store.SystemAccount(ctx, SettlementAccount, currency)
 	if errors.Is(err, ErrAccountNotFound) {
 		v.Add("currency", "unsupported currency")
-		return Account{}, v.Err()
+		return nil, v.Err()
 	}
 	if err != nil {
-		return Account{}, err
+		return nil, err
 	}
 
 	acc, err := s.store.CreateAccount(ctx, NewAccount{
@@ -87,25 +87,25 @@ func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (A
 		NormalBalance: Credit,
 	})
 	if errors.Is(err, ErrAccountExists) {
-		return Account{}, fmt.Errorf("%w: owner already has a wallet in %s", apperr.ErrConflict, currency)
+		return nil, fmt.Errorf("%w: owner already has a wallet in %s", apperr.ErrConflict, currency)
 	}
 	return acc, err
 }
 
 // Wallet returns the wallet with the given ID.
-func (s *Service) Wallet(ctx context.Context, id uuid.UUID) (Account, error) {
+func (s *Service) Wallet(ctx context.Context, id uuid.UUID) (*Account, error) {
 	acc, err := s.store.Account(ctx, id)
 	if errors.Is(err, ErrAccountNotFound) || (err == nil && acc.Kind != KindWallet) {
 		// System accounts are ours: to a client, they don't exist.
-		return Account{}, ErrWalletNotFound
+		return nil, ErrWalletNotFound
 	}
 	return acc, err
 }
 
 // Balance returns a wallet's balance, derived from its entries.
-func (s *Service) Balance(ctx context.Context, id uuid.UUID) (AccountBalance, error) {
+func (s *Service) Balance(ctx context.Context, id uuid.UUID) (*AccountBalance, error) {
 	if _, err := s.Wallet(ctx, id); err != nil {
-		return AccountBalance{}, err
+		return nil, err
 	}
 	return s.store.Balance(ctx, id)
 }
@@ -113,13 +113,13 @@ func (s *Service) Balance(ctx context.Context, id uuid.UUID) (AccountBalance, er
 // Deposit adds money from outside to a wallet. It posts a balanced
 // transaction: a debit to the settlement account, which now holds the money
 // at our bank, and a credit to the wallet, which now owes it to the customer.
-func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money) (Transaction, error) {
+func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money) (*Transaction, error) {
 	var v apperr.ValidationError
 	checkAmount(&v, amount.Amount)
 
 	w, err := s.Wallet(ctx, walletID)
 	if err != nil {
-		return Transaction{}, err
+		return nil, err
 	}
 	// The client must say which currency it means, so 500 can never quietly
 	// become 500 yen in a dollar wallet.
@@ -127,14 +127,14 @@ func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money)
 		v.Add("currency", "must match the wallet's currency, "+w.Currency)
 	}
 	if err := v.Err(); err != nil {
-		return Transaction{}, err
+		return nil, err
 	}
 
 	settlement, err := s.store.SystemAccount(ctx, SettlementAccount, w.Currency)
 	if err != nil {
 		// %v, not %w: a missing settlement account is our bug, so the client
 		// must get a 500, not a 404.
-		return Transaction{}, fmt.Errorf("settlement account for %s: %v", w.Currency, err)
+		return nil, fmt.Errorf("settlement account for %s: %v", w.Currency, err)
 	}
 	return s.store.PostTransaction(ctx, NewTransaction{
 		Description: "deposit",
@@ -179,7 +179,7 @@ func (s *Service) Transfer(ctx context.Context, fromID, toID string, amount Mone
 	}
 
 	// Compare the wallets only when both exist.
-	if from.ID != uuid.Nil && to.ID != uuid.Nil {
+	if from != nil && to != nil {
 		switch {
 		case from.ID == to.ID:
 			v.Add("to", "must be a different wallet")
@@ -209,16 +209,16 @@ func (s *Service) Transfer(ctx context.Context, fromID, toID string, amount Mone
 // walletField loads the wallet that a request field names. A malformed or
 // unknown ID is a problem with that field, recorded in v: only unexpected
 // errors are returned.
-func (s *Service) walletField(ctx context.Context, v *apperr.ValidationError, field, id string) (Account, error) {
+func (s *Service) walletField(ctx context.Context, v *apperr.ValidationError, field, id string) (*Account, error) {
 	wid, err := uuid.Parse(id)
 	if err != nil {
 		v.Add(field, "must be a wallet ID")
-		return Account{}, nil
+		return nil, nil
 	}
 	w, err := s.Wallet(ctx, wid)
 	if errors.Is(err, ErrWalletNotFound) {
 		v.Add(field, "no such wallet")
-		return Account{}, nil
+		return nil, nil
 	}
 	return w, err
 }
@@ -232,7 +232,7 @@ const (
 // EntryPage is one page of a wallet's entries, newest first. NextCursor
 // fetches the page after it, and is empty on the last page.
 type EntryPage struct {
-	Entries    []Entry
+	Entries    []*Entry
 	NextCursor string
 }
 

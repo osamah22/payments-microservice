@@ -25,7 +25,7 @@ type CreateAccountParams struct {
 	NormalBalance EntryDirection `json:"normal_balance"`
 }
 
-func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
+func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (*Account, error) {
 	row := q.db.QueryRow(ctx, createAccount,
 		arg.Kind,
 		arg.OwnerID,
@@ -43,7 +43,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.CreatedAt,
 		&i.Kind,
 	)
-	return i, err
+	return &i, err
 }
 
 const getAccount = `-- name: GetAccount :one
@@ -51,7 +51,7 @@ SELECT id, owner_id, name, currency, normal_balance, created_at, kind FROM accou
 WHERE id = $1
 `
 
-func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error) {
+func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (*Account, error) {
 	row := q.db.QueryRow(ctx, getAccount, id)
 	var i Account
 	err := row.Scan(
@@ -63,7 +63,7 @@ func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error)
 		&i.CreatedAt,
 		&i.Kind,
 	)
-	return i, err
+	return &i, err
 }
 
 const getAccountBalance = `-- name: GetAccountBalance :one
@@ -71,7 +71,7 @@ SELECT account_id, name, currency, balance FROM account_balances
 WHERE account_id = $1
 `
 
-func (q *Queries) GetAccountBalance(ctx context.Context, accountID uuid.UUID) (AccountBalance, error) {
+func (q *Queries) GetAccountBalance(ctx context.Context, accountID uuid.UUID) (*AccountBalance, error) {
 	row := q.db.QueryRow(ctx, getAccountBalance, accountID)
 	var i AccountBalance
 	err := row.Scan(
@@ -80,7 +80,7 @@ func (q *Queries) GetAccountBalance(ctx context.Context, accountID uuid.UUID) (A
 		&i.Currency,
 		&i.Balance,
 	)
-	return i, err
+	return &i, err
 }
 
 const getSystemAccount = `-- name: GetSystemAccount :one
@@ -93,7 +93,7 @@ type GetSystemAccountParams struct {
 	Currency string `json:"currency"`
 }
 
-func (q *Queries) GetSystemAccount(ctx context.Context, arg GetSystemAccountParams) (Account, error) {
+func (q *Queries) GetSystemAccount(ctx context.Context, arg GetSystemAccountParams) (*Account, error) {
 	row := q.db.QueryRow(ctx, getSystemAccount, arg.Name, arg.Currency)
 	var i Account
 	err := row.Scan(
@@ -105,7 +105,7 @@ func (q *Queries) GetSystemAccount(ctx context.Context, arg GetSystemAccountPara
 		&i.CreatedAt,
 		&i.Kind,
 	)
-	return i, err
+	return &i, err
 }
 
 const listAccountsByOwner = `-- name: ListAccountsByOwner :many
@@ -114,13 +114,13 @@ WHERE owner_id = $1::uuid
 ORDER BY created_at
 `
 
-func (q *Queries) ListAccountsByOwner(ctx context.Context, ownerID uuid.UUID) ([]Account, error) {
+func (q *Queries) ListAccountsByOwner(ctx context.Context, ownerID uuid.UUID) ([]*Account, error) {
 	rows, err := q.db.Query(ctx, listAccountsByOwner, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Account{}
+	items := []*Account{}
 	for rows.Next() {
 		var i Account
 		if err := rows.Scan(
@@ -134,7 +134,7 @@ func (q *Queries) ListAccountsByOwner(ctx context.Context, ownerID uuid.UUID) ([
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, &i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

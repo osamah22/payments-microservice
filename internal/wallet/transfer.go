@@ -16,8 +16,8 @@ var ErrInsufficientFunds = apperr.NewRule("insufficient_funds", "insufficient fu
 
 // Transfer moves amount from one account to another, as one balanced
 // transaction, and fails with ErrInsufficientFunds if from can't cover it.
-func (s *Store) Transfer(ctx context.Context, from, to uuid.UUID, amount int64, currency string) (Transaction, error) {
-	var posted Transaction
+func (s *Store) Transfer(ctx context.Context, from, to uuid.UUID, amount int64, currency string) (*Transaction, error) {
+	var posted *Transaction
 	err := s.inTx(ctx, func(q *walletdb.Queries) error {
 		// Lock both accounts until we commit. Another transfer that touches
 		// either one waits right here, so the balance below stays true. Every
@@ -51,7 +51,7 @@ func (s *Store) Transfer(ctx context.Context, from, to uuid.UUID, amount int64, 
 		return err
 	})
 	if err != nil {
-		return Transaction{}, fmt.Errorf("transfer: %w", err)
+		return nil, fmt.Errorf("transfer: %w", err)
 	}
 	return posted, nil
 }

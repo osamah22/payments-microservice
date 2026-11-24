@@ -26,8 +26,8 @@ type NewTransaction struct {
 
 // Transaction is a posted journal entry, together with its entries.
 type Transaction struct {
-	walletdb.Transaction
-	Entries []Entry `json:"entries"`
+	*walletdb.Transaction
+	Entries []*Entry `json:"entries"`
 }
 
 // inTx runs fn inside a database transaction, handing it queries bound to that
@@ -70,27 +70,27 @@ func (s *Store) tryTx(ctx context.Context, fn func(q *walletdb.Queries) error) e
 // PostTransaction records a transaction and all of its entries atomically:
 // either every entry is stored, or none are. Postgres rejects the whole thing
 // at commit if its debits and credits don't balance.
-func (s *Store) PostTransaction(ctx context.Context, nt NewTransaction) (Transaction, error) {
-	var posted Transaction
+func (s *Store) PostTransaction(ctx context.Context, nt NewTransaction) (*Transaction, error) {
+	var posted *Transaction
 	err := s.inTx(ctx, func(q *walletdb.Queries) error {
 		var err error
 		posted, err = insertTransaction(ctx, q, nt)
 		return err
 	})
 	if err != nil {
-		return Transaction{}, fmt.Errorf("post transaction: %w", err)
+		return nil, fmt.Errorf("post transaction: %w", err)
 	}
 	return posted, nil
 }
 
 // insertTransaction inserts a transaction and its entries with q, which must
 // be bound to a database transaction: on its own, it isn't atomic.
-func insertTransaction(ctx context.Context, q *walletdb.Queries, nt NewTransaction) (Transaction, error) {
+func insertTransaction(ctx context.Context, q *walletdb.Queries, nt NewTransaction) (*Transaction, error) {
 	journal, err := q.CreateTransaction(ctx, nt.Description)
 	if err != nil {
-		return Transaction{}, fmt.Errorf("insert transaction: %w", err)
+		return nil, fmt.Errorf("insert transaction: %w", err)
 	}
-	posted := Transaction{Transaction: journal}
+	posted := &Transaction{Transaction: journal}
 	for _, p := range nt.Postings {
 		entry, err := q.CreateEntry(ctx, walletdb.CreateEntryParams{
 			TransactionID: journal.ID,
@@ -100,7 +100,7 @@ func insertTransaction(ctx context.Context, q *walletdb.Queries, nt NewTransacti
 			Currency:      p.Currency,
 		})
 		if err != nil {
-			return Transaction{}, fmt.Errorf("insert entry: %w", err)
+			return nil, fmt.Errorf("insert entry: %w", err)
 		}
 		posted.Entries = append(posted.Entries, entry)
 	}

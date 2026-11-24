@@ -25,7 +25,7 @@ type CreateEntryParams struct {
 	Currency      string         `json:"currency"`
 }
 
-func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry, error) {
+func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (*Entry, error) {
 	row := q.db.QueryRow(ctx, createEntry,
 		arg.TransactionID,
 		arg.AccountID,
@@ -43,7 +43,7 @@ func (q *Queries) CreateEntry(ctx context.Context, arg CreateEntryParams) (Entry
 		&i.Currency,
 		&i.CreatedAt,
 	)
-	return i, err
+	return &i, err
 }
 
 const createTransaction = `-- name: CreateTransaction :one
@@ -52,11 +52,11 @@ VALUES ($1)
 RETURNING id, description, created_at
 `
 
-func (q *Queries) CreateTransaction(ctx context.Context, description string) (Transaction, error) {
+func (q *Queries) CreateTransaction(ctx context.Context, description string) (*Transaction, error) {
 	row := q.db.QueryRow(ctx, createTransaction, description)
 	var i Transaction
 	err := row.Scan(&i.ID, &i.Description, &i.CreatedAt)
-	return i, err
+	return &i, err
 }
 
 const listEntriesByAccount = `-- name: ListEntriesByAccount :many
@@ -74,13 +74,13 @@ type ListEntriesByAccountParams struct {
 }
 
 // Newest first, one page at a time: pass the last id you saw as before_id.
-func (q *Queries) ListEntriesByAccount(ctx context.Context, arg ListEntriesByAccountParams) ([]Entry, error) {
+func (q *Queries) ListEntriesByAccount(ctx context.Context, arg ListEntriesByAccountParams) ([]*Entry, error) {
 	rows, err := q.db.Query(ctx, listEntriesByAccount, arg.AccountID, arg.BeforeID, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Entry{}
+	items := []*Entry{}
 	for rows.Next() {
 		var i Entry
 		if err := rows.Scan(
@@ -94,7 +94,7 @@ func (q *Queries) ListEntriesByAccount(ctx context.Context, arg ListEntriesByAcc
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, &i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
