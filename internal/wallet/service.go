@@ -17,8 +17,9 @@ import (
 // we hold at our bank, one account per currency.
 const SettlementAccount = "settlement"
 
-// MaxAmount caps a single deposit, in minor units: a million dollars, or a
-// million euros. It catches typos, and keeps sums far from overflowing.
+// MaxAmount caps a single deposit or transfer, in minor units: a million
+// dollars, or a million euros. It catches typos, and keeps sums far from
+// overflowing.
 const MaxAmount = 100_000_000
 
 // ErrWalletNotFound is returned when there's no wallet with the given ID.
@@ -108,12 +109,6 @@ func (s *Service) Balance(ctx context.Context, id uuid.UUID) (AccountBalance, er
 func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money) (Transaction, error) {
 	var v apperr.ValidationError
 	checkAmount(&v, amount.Amount)
-	switch {
-	case amount.Amount <= 0:
-		v.Add("amount", "must be a positive number of minor units, like 1050 for 10.50")
-	case amount.Amount > MaxAmount:
-		v.Add("amount", fmt.Sprintf("must be at most %d", MaxAmount))
-	}
 
 	w, err := s.Wallet(ctx, walletID)
 	if err != nil {
@@ -141,69 +136,6 @@ func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money)
 			{AccountID: w.ID, Direction: Credit, Amount: amount.Amount, Currency: w.Currency},
 		},
 	})
-}
-
-// Page sizes for listing entries.
-const (
-	DefaultPageSize = 20
-	MaxPageSize     = 100
-)
-
-// EntryPage is one page of a wallet's entries, newest first. NextCursor
-// fetches the page after it, and is empty on the last page.
-type EntryPage struct {
-	Entries    []Entry
-	NextCursor string
-}
-
-// Entries returns a page of a wallet's entries. An empty cursor starts at the
-// newest entry.
-func (s *Service) Entries(ctx context.Context, walletID uuid.UUID, cursor string, limit int) (EntryPage, error) {
-	var v apperr.ValidationError
-	if limit < 1 || limit > MaxPageSize {
-		v.Add("limit", fmt.Sprintf("must be between 1 and %d", MaxPageSize))
-	}
-	before, err := decodeCursor(cursor)
-	if err != nil {
-		v.Add("cursor", "invalid cursor")
-	}
-	if err := v.Err(); err != nil {
-		return EntryPage{}, err
-	}
-	if _, err := s.Wallet(ctx, walletID); err != nil {
-		return EntryPage{}, err
-	}
-
-	// Fetch one entry more than the page holds. If it comes back, there's
-	// another page, and we know without counting anything.
-	entries, err := s.store.Entries(ctx, walletID, before, int32(limit+1))
-	if err != nil {
-		return EntryPage{}, err
-	}
-	page := EntryPage{Entries: entries}
-	if len(entries) > limit {
-		page.Entries = entries[:limit]
-		page.NextCursor = encodeCursor(entries[limit-1].ID)
-	}
-	return page, nil
-}
-
-// A cursor is the ID of the last entry on the previous page, encoded so it's
-// opaque: clients pass it back but never build one, so we can change what's
-// inside without breaking them.
-func encodeCursor(id int64) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(id, 10)))
-}
-
-func decodeCursor(cursor string) (int64, error) {
-	if cursor == "" {
-		return 0, nil // the first page
-	}
-	b, err := base64.RawURLEncoding.DecodeString(cursor)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseInt(string(b), 10, 64)
 }
 
 // checkAmount records a problem in v if amount can't be moved: money moves in
@@ -282,4 +214,67 @@ func (s *Service) walletField(ctx context.Context, v *apperr.ValidationError, fi
 		return Account{}, nil
 	}
 	return w, err
+}
+
+// Page sizes for listing entries.
+const (
+	DefaultPageSize = 20
+	MaxPageSize     = 100
+)
+
+// EntryPage is one page of a wallet's entries, newest first. NextCursor
+// fetches the page after it, and is empty on the last page.
+type EntryPage struct {
+	Entries    []Entry
+	NextCursor string
+}
+
+// Entries returns a page of a wallet's entries. An empty cursor starts at the
+// newest entry.
+func (s *Service) Entries(ctx context.Context, walletID uuid.UUID, cursor string, limit int) (EntryPage, error) {
+	var v apperr.ValidationError
+	if limit < 1 || limit > MaxPageSize {
+		v.Add("limit", fmt.Sprintf("must be between 1 and %d", MaxPageSize))
+	}
+	before, err := decodeCursor(cursor)
+	if err != nil {
+		v.Add("cursor", "invalid cursor")
+	}
+	if err := v.Err(); err != nil {
+		return EntryPage{}, err
+	}
+	if _, err := s.Wallet(ctx, walletID); err != nil {
+		return EntryPage{}, err
+	}
+
+	// Fetch one entry more than the page holds. If it comes back, there's
+	// another page, and we know without counting anything.
+	entries, err := s.store.Entries(ctx, walletID, before, int32(limit+1))
+	if err != nil {
+		return EntryPage{}, err
+	}
+	page := EntryPage{Entries: entries}
+	if len(entries) > limit {
+		page.Entries = entries[:limit]
+		page.NextCursor = encodeCursor(entries[limit-1].ID)
+	}
+	return page, nil
+}
+
+// A cursor is the ID of the last entry on the previous page, encoded so it's
+// opaque: clients pass it back but never build one, so we can change what's
+// inside without breaking them.
+func encodeCursor(id int64) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(id, 10)))
+}
+
+func decodeCursor(cursor string) (int64, error) {
+	if cursor == "" {
+		return 0, nil // the first page
+	}
+	b, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(string(b), 10, 64)
 }

@@ -79,7 +79,7 @@ func (s *Store) PostTransaction(ctx context.Context, nt NewTransaction) (Transac
 }
 
 // insertTransaction inserts a transaction and its entries with q, which must
-// be bound to a database transaction: on its own, it isnt' atomic.
+// be bound to a database transaction: on its own, it isn't atomic.
 func insertTransaction(ctx context.Context, q *walletdb.Queries, nt NewTransaction) (Transaction, error) {
 	journal, err := q.CreateTransaction(ctx, nt.Description)
 	if err != nil {

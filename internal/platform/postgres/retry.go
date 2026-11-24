@@ -15,6 +15,8 @@ const MaxAttempts = 5
 
 // Retry runs fn, which must run one whole database transaction, and runs it
 // again when Postgres aborted it with a serialization failure or a deadlock.
+// Both mean nothing happened, so another attempt is safe, as long as fn has no
+// side effects outside the transaction. It gives up after MaxAttempts.
 func Retry(ctx context.Context, fn func() error) error {
 	backoff := 10 * time.Millisecond
 	for attempt := 1; ; attempt++ {
