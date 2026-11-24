@@ -22,24 +22,22 @@ import (
 var version = "dev"
 
 func main() {
-	// Config
 	cfg, err := loadConfig(config.New(os.LookupEnv))
 	if err != nil {
+		// There's no logger yet: its settings are part of the configuration.
 		fmt.Fprintln(os.Stderr, "wallet:", err)
 		os.Exit(2)
 	}
-
-	// Logger
 	logger := logging.New(os.Stdout, logging.Options{
 		Service: "wallet",
 		Version: version,
 		Level:   cfg.LogLevel,
 		Format:  cfg.LogFormat,
 	})
+	// Code that logs through the slog package functions gets our logger too.
 	slog.SetDefault(logger)
 	logger.Info("starting", "env", cfg.Env, "log_level", cfg.LogLevel.String())
 
-	// Database
 	pool, err := postgres.NewPool(context.Background(), cfg.DatabaseURL, int32(cfg.DBMaxConns))
 	if err != nil {
 		logger.Error("connect to postgres", "err", err)
@@ -47,63 +45,60 @@ func main() {
 	}
 	logger.Info("connected to postgres", "max_conns", pool.Config().MaxConns)
 
-	// Mux Handler
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		logger.Info("health check", "remote", r.RemoteAddr)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{status:ok}` + "\n"))
+		httpx.WriteJSON(w, r, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), time.Second*2)
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := pool.Ping(ctx); err != nil {
 			logger.WarnContext(ctx, "not ready: database unreachable", "err", err)
-			httpx.WriteJSON(w, r, http.StatusServiceUnavailable, map[string]string{
-				"status": "unavailable",
-			})
+			httpx.WriteJSON(w, r, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 			return
 		}
 		httpx.WriteJSON(w, r, http.StatusOK, map[string]string{"status": "ready"})
 	})
+
 	// The wallet API, and a JSON 404 for everything else.
 	svc := wallet.NewService(wallet.NewStore(pool))
 	wallet.NewHandler(svc).Register(mux)
 	mux.HandleFunc("/", httpx.NotFound)
 
-	// Server
-	server := &http.Server{
+	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpx.Chain(mux,
 			httpx.RequestID,
 			httpx.AccessLog(logger),
-			httpx.Recover(logger)),
-		ReadTimeout: 5 * time.Second,
-		ErrorLog:    slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+			httpx.Recover(logger),
+		),
+		ReadHeaderTimeout: 5 * time.Second,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 
-	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
-		logger.Info("wallet service listing", "addr", server.Addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Info("wallet service listening", "addr", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("server failed", "err", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	logger.Info("shutting down gracefull")
+	logger.Info("shutting down gracefully")
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown failed", "err", err)
 	}
 	logger.Info("server stopped")
 
-	// close the pool last: requests that were still finishing needed it.
+	// Close the pool last: requests that were still finishing needed it.
 	pool.Close()
 	logger.Info("database pool closed")
 }

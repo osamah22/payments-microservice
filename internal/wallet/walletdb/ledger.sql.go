@@ -62,7 +62,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, description string) (Tr
 const listEntriesByAccount = `-- name: ListEntriesByAccount :many
 SELECT id, transaction_id, account_id, direction, amount, currency, created_at FROM entries
 WHERE account_id = $1
-    AND id < $2
+  AND id < $2
 ORDER BY id DESC
 LIMIT $3
 `
@@ -73,7 +73,7 @@ type ListEntriesByAccountParams struct {
 	PageSize  int32     `json:"page_size"`
 }
 
-// newest first, one page at a time: pass the last id you saw as before_id
+// Newest first, one page at a time: pass the last id you saw as before_id.
 func (q *Queries) ListEntriesByAccount(ctx context.Context, arg ListEntriesByAccountParams) ([]Entry, error) {
 	rows, err := q.db.Query(ctx, listEntriesByAccount, arg.AccountID, arg.BeforeID, arg.PageSize)
 	if err != nil {

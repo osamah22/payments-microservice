@@ -46,6 +46,26 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 	return i, err
 }
 
+const getAccount = `-- name: GetAccount :one
+SELECT id, owner_id, name, currency, normal_balance, created_at, kind FROM accounts
+WHERE id = $1
+`
+
+func (q *Queries) GetAccount(ctx context.Context, id uuid.UUID) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccount, id)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Currency,
+		&i.NormalBalance,
+		&i.CreatedAt,
+		&i.Kind,
+	)
+	return i, err
+}
+
 const getAccountBalance = `-- name: GetAccountBalance :one
 SELECT account_id, name, currency, balance FROM account_balances
 WHERE account_id = $1
@@ -63,29 +83,9 @@ func (q *Queries) GetAccountBalance(ctx context.Context, accountID uuid.UUID) (A
 	return i, err
 }
 
-const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, owner_id, name, currency, normal_balance, created_at, kind FROM accounts
-WHERE id = $1
-`
-
-func (q *Queries) GetAccountByID(ctx context.Context, id uuid.UUID) (Account, error) {
-	row := q.db.QueryRow(ctx, getAccountByID, id)
-	var i Account
-	err := row.Scan(
-		&i.ID,
-		&i.OwnerID,
-		&i.Name,
-		&i.Currency,
-		&i.NormalBalance,
-		&i.CreatedAt,
-		&i.Kind,
-	)
-	return i, err
-}
-
 const getSystemAccount = `-- name: GetSystemAccount :one
 SELECT id, owner_id, name, currency, normal_balance, created_at, kind FROM accounts
-WHERE kind='system' AND name = $1 AND currency = $2
+WHERE kind = 'system' AND name = $1 AND currency = $2
 `
 
 type GetSystemAccountParams struct {

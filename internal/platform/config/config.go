@@ -1,3 +1,4 @@
+// Package config reads service configuration from environment variables.
 package config
 
 import (
@@ -9,9 +10,9 @@ import (
 	"time"
 )
 
-type Config struct {
-}
-
+// Env reads typed values from environment variables. It doesn't stop at the
+// first problem: it collects them all, so a misconfigured service reports
+// everything that's wrong in one go.
 type Env struct {
 	lookup   func(key string) (string, bool)
 	problems []string
@@ -33,10 +34,11 @@ func (e *Env) get(key string) (string, bool) {
 
 // Invalid records a problem with a variable.
 func (e *Env) Invalid(key, problem string) {
-	e.problems = append(e.problems, fmt.Sprintf("%s: %s", key, problem))
+	e.problems = append(e.problems, key+": "+problem)
 }
 
-// Err returns nil if every variable was valid. Otherwise returns a single error.
+// Err returns nil if every variable was valid. Otherwise it returns a single
+// error that lists every problem, one per line.
 func (e *Env) Err() error {
 	if len(e.problems) == 0 {
 		return nil

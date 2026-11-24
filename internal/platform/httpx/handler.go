@@ -7,6 +7,9 @@ import (
 	"github.com/osamah22/payments-microservice/internal/platform/apperr"
 )
 
+// HandlerFunc is an HTTP handler that returns its error instead of writing it.
+// The error goes to the client through Error, like every other error. Only
+// return one before writing anything to w.
 type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -18,15 +21,15 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // QueryInt returns the query parameter key as an int, or def if it's absent.
 // A value that isn't a whole number is a validation error on that parameter.
 func QueryInt(r *http.Request, key string, def int) (int, error) {
-	v := r.URL.Query().Get(key)
-	if v == "" {
+	s := r.URL.Query().Get(key)
+	if s == "" {
 		return def, nil
 	}
-	n, err := strconv.Atoi(v)
+	n, err := strconv.Atoi(s)
 	if err != nil {
 		var v apperr.ValidationError
-		v.Add("key", "must be a whole number")
+		v.Add(key, "must be a whole number")
 		return 0, v.Err()
 	}
-	return n, err
+	return n, nil
 }

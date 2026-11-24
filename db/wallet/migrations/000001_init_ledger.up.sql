@@ -76,14 +76,14 @@ END;
 $$;
 
 CREATE CONSTRAINT TRIGGER transactions_balanced
-AFTER INSERT ON transactions
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION check_transaction_balanced();
+    AFTER INSERT ON transactions
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION check_transaction_balanced();
 
 CREATE CONSTRAINT TRIGGER entries_balanced
-AFTER INSERT ON entries
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION check_transaction_balanced();
+    AFTER INSERT ON entries
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION check_transaction_balanced();
 
 -- The ledger is append-only: mistakes are fixed with a reversing transaction.
 CREATE FUNCTION forbid_ledger_changes() RETURNS trigger
@@ -95,12 +95,12 @@ END;
 $$;
 
 CREATE TRIGGER transactions_append_only
-BEFORE UPDATE OR DELETE ON transactions
-FOR EACH ROW EXECUTE FUNCTION forbid_ledger_changes();
+    BEFORE UPDATE OR DELETE ON transactions
+    FOR EACH ROW EXECUTE FUNCTION forbid_ledger_changes();
 
 CREATE TRIGGER entries_append_only
-BEFORE UPDATE OR DELETE ON entries
-FOR EACH ROW EXECUTE FUNCTION forbid_ledger_changes();
+    BEFORE UPDATE OR DELETE ON entries
+    FOR EACH ROW EXECUTE FUNCTION forbid_ledger_changes();
 
 -- Balances are derived from entries, never stored.
 CREATE VIEW account_balances AS

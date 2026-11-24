@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/osamah22/payments-microservice/internal/platform/apperr"
-	"github.com/osamah22/payments-microservice/internal/wallet/walletdb"
 )
 
 // SettlementAccount names the system account that funds deposits: the money
@@ -32,16 +31,16 @@ type Money struct {
 	Currency string `json:"currency"`
 }
 
-// Service is the wallet's business login. It validates input, enforces the
-// rules, and uses the Store to persist the results.
+// Service is the wallet's business logic. It validates input, enforces the
+// rules, and uses the Store to persist the results. It knows nothing about
+// HTTP, so every way into the service gets the same rules.
 type Service struct {
 	store *Store
 }
 
+// NewService returns a Service that keeps its data in store.
 func NewService(store *Store) *Service {
-	return &Service{
-		store: store,
-	}
+	return &Service{store: store}
 }
 
 // currencyCode matches the shape of an ISO 4217 code, like USD or EUR.
@@ -52,15 +51,17 @@ var currencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
 func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (Account, error) {
 	var v apperr.ValidationError
 	owner, err := uuid.Parse(ownerID)
-	if err != nil {
+	if err != nil || owner == uuid.Nil {
 		v.Add("owner_id", "must be a UUID")
 	}
 	if !currencyCode.MatchString(currency) {
-		v.Add("currency", "must be a three-letter ISO 4217 code")
+		v.Add("currency", "must be a three-letter ISO 4217 code, like USD")
 	}
 	if err := v.Err(); err != nil {
 		return Account{}, err
 	}
+
+	// We support a currency when we have a settlement account to fund it.
 	_, err = s.store.SystemAccount(ctx, SettlementAccount, currency)
 	if errors.Is(err, ErrAccountNotFound) {
 		v.Add("currency", "unsupported currency")
@@ -69,15 +70,16 @@ func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (A
 	if err != nil {
 		return Account{}, err
 	}
+
 	acc, err := s.store.CreateAccount(ctx, NewAccount{
-		Kind:          walletdb.AccountKindWallet,
+		Kind:          KindWallet,
 		OwnerID:       &owner,
-		Name:          fmt.Sprintf("%s wallet", currency),
+		Name:          currency + " wallet",
 		Currency:      currency,
 		NormalBalance: Credit,
 	})
 	if errors.Is(err, ErrAccountExists) {
-		return Account{}, fmt.Errorf("%w: owner already has a wallet in %s", err, currency)
+		return Account{}, fmt.Errorf("%w: owner already has a wallet in %s", apperr.ErrConflict, currency)
 	}
 	return acc, err
 }
@@ -86,8 +88,8 @@ func (s *Service) CreateWallet(ctx context.Context, ownerID, currency string) (A
 func (s *Service) Wallet(ctx context.Context, id uuid.UUID) (Account, error) {
 	acc, err := s.store.Account(ctx, id)
 	if errors.Is(err, ErrAccountNotFound) || (err == nil && acc.Kind != KindWallet) {
-		// systems accounts are private. Non-visiable to the outside.
-		return Account{}, ErrAccountNotFound
+		// System accounts are ours: to a client, they don't exist.
+		return Account{}, ErrWalletNotFound
 	}
 	return acc, err
 }
@@ -141,12 +143,13 @@ func (s *Service) Deposit(ctx context.Context, walletID uuid.UUID, amount Money)
 	})
 }
 
+// Page sizes for listing entries.
 const (
 	DefaultPageSize = 20
 	MaxPageSize     = 100
 )
 
-// EntryPage is one page of wallet's entries, newest first. NextCursor
+// EntryPage is one page of a wallet's entries, newest first. NextCursor
 // fetches the page after it, and is empty on the last page.
 type EntryPage struct {
 	Entries    []Entry
@@ -222,18 +225,21 @@ type Transfer struct {
 	CreatedAt     time.Time
 }
 
+// Transfer moves money between two wallets in the same currency, as one
+// balanced transaction: a debit to the sender, a credit to the receiver.
 func (s *Service) Transfer(ctx context.Context, fromID, toID string, amount Money) (Transfer, error) {
 	var v apperr.ValidationError
 	checkAmount(&v, amount.Amount)
 	from, err := s.walletField(ctx, &v, "from", fromID)
 	if err != nil {
-		return Transfer{}, nil
+		return Transfer{}, err
 	}
 	to, err := s.walletField(ctx, &v, "to", toID)
 	if err != nil {
 		return Transfer{}, err
 	}
-	// compare the wallets only when both exists
+
+	// Compare the wallets only when both exist.
 	if from.ID != uuid.Nil && to.ID != uuid.Nil {
 		switch {
 		case from.ID == to.ID:
@@ -241,12 +247,13 @@ func (s *Service) Transfer(ctx context.Context, fromID, toID string, amount Mone
 		case to.Currency != from.Currency:
 			v.Add("to", "must be a "+from.Currency+" wallet, like from")
 		case amount.Currency != from.Currency:
-			v.Add("currency", "must match the wallet's currency, "+from.Currency)
+			v.Add("currency", "must match the wallets' currency, "+from.Currency)
 		}
 	}
 	if err := v.Err(); err != nil {
 		return Transfer{}, err
 	}
+
 	tx, err := s.store.Transfer(ctx, from.ID, to.ID, amount.Amount, amount.Currency)
 	if err != nil {
 		return Transfer{}, err
@@ -266,12 +273,13 @@ func (s *Service) Transfer(ctx context.Context, fromID, toID string, amount Mone
 func (s *Service) walletField(ctx context.Context, v *apperr.ValidationError, field, id string) (Account, error) {
 	wid, err := uuid.Parse(id)
 	if err != nil {
-		v.Add(field, "must be a wallet id")
+		v.Add(field, "must be a wallet ID")
 		return Account{}, nil
 	}
 	w, err := s.Wallet(ctx, wid)
 	if errors.Is(err, ErrWalletNotFound) {
 		v.Add(field, "no such wallet")
+		return Account{}, nil
 	}
 	return w, err
 }

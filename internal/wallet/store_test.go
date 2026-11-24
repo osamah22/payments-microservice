@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/osamah22/payments-microservice/internal/platform/postgres"
 	"github.com/osamah22/payments-microservice/internal/wallet"
