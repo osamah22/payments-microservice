@@ -34,7 +34,7 @@ PKGS ?= ./...
 test:
 	@go test -count=1 $(TESTFLAGS) $(PKGS)
 
-.PHONY: run-wallet
+.PHONY: run-wallet keys
 
 # Run the wallet service against the local database, stamped with a git version.
 VERSION ?= $(shell git describe --always --dirty)
@@ -42,3 +42,10 @@ VERSION ?= $(shell git describe --always --dirty)
 run-wallet:
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/wallet ./cmd/wallet
 	@WALLET_DATABASE_URL="$(DB_URL)" ./bin/wallet
+
+keys:
+	@mkdir -p secrets
+	@test ! -e secrets/auth_ed25519.pem  || (echo "secrets/auth_ed25519.pem exists, keeping it" && exit 1)
+	@umask 077 && openssl genpkey -algorithm ed25519 -out secrets/auth_ed25519.pem
+	@openssl pkey -in secrets/auth_ed25519.pem -pubout -out secrets/auth_ed25519.pub.pem
+	@ls -l secrets

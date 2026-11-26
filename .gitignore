@@ -18,6 +18,7 @@ go.work
 go.work.sum
 
 # Secrets / local env
+secrets/
 .env
 .env.*
 !.env.example

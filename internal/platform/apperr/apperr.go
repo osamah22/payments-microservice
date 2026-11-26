@@ -15,7 +15,8 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrConflict means the request clashes with the current state, such as
 	// creating something that already exists.
-	ErrConflict = errors.New("conflict")
+	ErrConflict        = errors.New("conflict")
+	ErrUnauthenticated = errors.New("unauthenticated")
 )
 
 // ValidationError reports which fields of a request are invalid, and why.
