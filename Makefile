@@ -27,6 +27,8 @@ generate:
 # Integration tests use the local Docker Postgres. Without this URL they skip.
 WALLET_TEST_DATABASE_URL ?= postgres://payments:payments@localhost:5432/wallet?sslmode=disable
 export WALLET_TEST_DATABASE_URL
+AUTH_TEST_DATABASE_URL ?= postgres://payments:payments@localhost:5432/auth?sslmode=disable
+export AUTH_TEST_DATABASE_URL
 
 # Run part of the suite with PKGS=./internal/wallet TESTFLAGS='-run Transfer'.
 PKGS ?= ./...
@@ -34,7 +36,7 @@ PKGS ?= ./...
 test:
 	@go test -count=1 $(TESTFLAGS) $(PKGS)
 
-.PHONY: run-wallet keys
+.PHONY: run-wallet run-auth keys
 
 # Run the wallet service against the local database, stamped with a git version.
 VERSION ?= $(shell git describe --always --dirty)
@@ -42,6 +44,13 @@ VERSION ?= $(shell git describe --always --dirty)
 run-wallet:
 	@go build -ldflags "-X main.version=$(VERSION)" -o bin/wallet ./cmd/wallet
 	@WALLET_DATABASE_URL="$(DB_URL)" ./bin/wallet
+
+# Run the auth service against the local auth database. Needs a key: make keys.
+AUTH_DB_URL ?= postgres://payments:payments@localhost:5432/auth?sslmode=disable
+
+run-auth:
+	@go build -ldflags "-X main.version=$(VERSION)" -o bin/auth ./cmd/auth
+	@AUTH_DATABASE_URL="$(AUTH_DB_URL)" AUTH_PRIVATE_KEY_PATH=secrets/auth_ed25519.pem ./bin/auth
 
 keys:
 	@mkdir -p secrets

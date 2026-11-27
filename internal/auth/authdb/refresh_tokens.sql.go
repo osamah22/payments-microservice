@@ -59,7 +59,7 @@ func (q *Queries) GetRefreshTokenForUpdate(ctx context.Context, tokenHash []byte
 }
 
 const revokeFamily = `-- name: RevokeFamily :execrows
-UPDATE refresh_tokens SET revoked_at = now
+UPDATE refresh_tokens SET revoked_at = now()
 WHERE family_id = $1 AND revoked_at IS NULL
 `
 
@@ -72,7 +72,7 @@ func (q *Queries) RevokeFamily(ctx context.Context, familyID uuid.UUID) (int64, 
 }
 
 const revokeFamilyOf = `-- name: RevokeFamilyOf :execrows
-UPDATE refresh_tokens SET revoked_at = now
+UPDATE refresh_tokens SET revoked_at = now()
 WHERE
     family_id = (
         SELECT t.family_id FROM refresh_tokens t

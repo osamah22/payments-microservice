@@ -70,7 +70,7 @@ func (v *Verifier) Verify(token string) (uuid.UUID, error) {
 	}
 	id, err := uuid.Parse(claims.Subject)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("%w: subject %q is not a user ID", ErrInvalidToken, id)
+		return uuid.Nil, fmt.Errorf("%w: subject %q is not a user ID", ErrInvalidToken, claims.Subject)
 	}
 	return id, nil
 }
@@ -92,6 +92,7 @@ func (v *Verifier) Require(next http.Handler) http.HandlerFunc {
 			slog.InfoContext(r.Context(), "access token refused", "err", err)
 			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 			httpx.Error(w, r, ErrInvalidToken)
+			return
 		}
 		ctx := context.WithValue(r.Context(), userIDKey{}, id)
 		ctx = logging.With(ctx, slog.String("user_id", id.String()))

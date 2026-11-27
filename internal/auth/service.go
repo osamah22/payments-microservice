@@ -62,6 +62,7 @@ func NewService(pool *pgxpool.Pool, signer *Signer, refreshTTL time.Duration) *S
 	return &Service{
 		pool:       pool,
 		q:          authdb.New(pool),
+		signer:     signer,
 		refreshTTL: refreshTTL,
 		dummyHash:  dummy,
 	}

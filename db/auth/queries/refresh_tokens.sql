@@ -11,11 +11,11 @@ UPDATE refresh_tokens SET rotated_at = now()
 WHERE id = $1;
 
 -- name: RevokeFamily :execrows
-UPDATE refresh_tokens SET revoked_at = now
+UPDATE refresh_tokens SET revoked_at = now()
 WHERE family_id = $1 AND revoked_at IS NULL;
 
 -- name: RevokeFamilyOf :execrows
-UPDATE refresh_tokens SET revoked_at = now
+UPDATE refresh_tokens SET revoked_at = now()
 WHERE
     family_id = (
         SELECT t.family_id FROM refresh_tokens t
